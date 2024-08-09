@@ -45,7 +45,7 @@ export async function POST(req) {
             role: 'system',
             content: systemPrompt
         },
-        ...data,
+        ...data
         ],
         model: "llama3-8b-8192",
         stream: true,
