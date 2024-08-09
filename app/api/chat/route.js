@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
 import Groq from "groq-sdk";
 
 const systemPrompt = `You are HeadStarterAI SupportBot, a virtual assistant designed to provide exceptional customer support for HeadStarterAI, a platform that offers AI-powered interviews for software engineering jobs. Your goal is to assist users by answering their questions, guiding them through the platform, and resolving any issues they may encounter.
@@ -36,7 +35,6 @@ Clear and concise communication.
 Patient and supportive, especially when users are frustrated or confused.`
 
 export async function POST(req) {
-    const openai = new OpenAI();
     const data = await req.json();
 
     const groq = new Groq({ apiKey: process.env.NEXT_PUBLIC_GROQ_API_KEY, dangerouslyAllowBrowser: true });
