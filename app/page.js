@@ -1,17 +1,18 @@
 'use client'
 
-import { Box, Button, Stack, TextField } from '@mui/material'
+import { Box, Button, Stack, TextField, Typography } from '@mui/material'
 import { useState, useEffect, useRef } from 'react'
-import { signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth'
-import { doc, setDoc, addDoc, collection } from 'firebase/firestore'
-import { auth, db} from './firebase' 
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth'
+import { doc, setDoc, addDoc, collection, getDocs, query, where, orderBy } from 'firebase/firestore'
+import { auth, db } from './firebase' 
 import { updateDoc, arrayUnion } from 'firebase/firestore';
-
 
 export default function Home() {
   const [user, setUser] = useState(null)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [username, setUsername] = useState('') // State for username
+  const [isSignUp, setIsSignUp] = useState(false) // State to toggle between sign in and sign up
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
@@ -26,34 +27,71 @@ export default function Home() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setUser(user)
-        // Store user info in Firestore when authenticated
-        await setDoc(doc(db, 'users', user.uid), {
-          email: user.email,
-        });
+        // Fetch previous messages from Firestore
+        await fetchMessages(user.uid)
       } else {
         setUser(null)
       }
     })
 
+    // Fetch messages from localStorage on component mount
+    const storedMessages = localStorage.getItem('chatMessages')
+    if (storedMessages) {
+      setMessages(JSON.parse(storedMessages))
+    }
+
     return () => unsubscribe()
   }, [])
+
+  // Function to fetch previous messages from Firestore
+  const fetchMessages = async (userId) => {
+    try {
+      const messagesQuery = query(
+        collection(db, 'messages'),
+        where('userId', '==', userId),
+        orderBy('timestamp', 'asc')
+      )
+      const querySnapshot = await getDocs(messagesQuery)
+      const fetchedMessages = []
+      querySnapshot.forEach((doc) => {
+        const data = doc.data()
+        fetchedMessages.push(...data.messages)
+      })
+      setMessages(fetchedMessages)
+      // Save messages to localStorage
+      localStorage.setItem('chatMessages', JSON.stringify(fetchedMessages))
+    } catch (error) {
+      console.error('Failed to fetch messages:', error)
+    }
+  }
 
   // Function to handle user sign-in
   const signIn = async () => {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password)
       setUser(userCredential.user)
-      // Store user info in Firestore after sign-in
-      await setDoc(doc(db, 'users', userCredential.user.uid), {
-        email: userCredential.user.email,
-      });
-
     } catch (error) {
       console.error('Authentication failed:', error)
       alert('Authentication failed. Please try again.')
     }
   }
-  
+
+  // Function to handle user sign-up
+  const signUp = async () => {
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password)
+      setUser(userCredential.user)
+      // Store new user info in Firestore
+      await setDoc(doc(db, 'users', userCredential.user.uid), {
+        email: userCredential.user.email,
+        username: username // Save the username in Firestore
+      });
+    } catch (error) {
+      console.error('Sign up failed:', error)
+      alert('Sign up failed. Please try again.')
+    }
+  }
+
   // Function to handle sending a message
   const sendMessage = async () => {
     if (!message.trim()) return;  // Don't send empty messages
@@ -63,11 +101,16 @@ export default function Home() {
     const userMessage = { role: 'user', content: message };
     const assistantMessage = { role: 'assistant', content: '' };
   
-    setMessages((messages) => [
-      ...messages,
-      userMessage,
-      assistantMessage,
-    ]);
+    setMessages((messages) => {
+      const newMessages = [
+        ...messages,
+        userMessage,
+        assistantMessage,
+      ]
+      // Save messages to localStorage
+      localStorage.setItem('chatMessages', JSON.stringify(newMessages))
+      return newMessages
+    });
   
     try {
       // Upload the user's message to Firestore
@@ -109,7 +152,9 @@ export default function Home() {
           }
           return msg;
         });
-        return updatedMessages;
+        // Save updated messages to localStorage
+        localStorage.setItem('chatMessages', JSON.stringify(updatedMessages))
+        return updatedMessages
       });
   
       // Update the Firestore document with the assistant's response
@@ -119,10 +164,15 @@ export default function Home() {
   
     } catch (error) {
       console.error('Error:', error);
-      setMessages((messages) => [
-        ...messages,
-        { role: 'assistant', content: "I'm sorry, but I encountered an error. Please try again later." },
-      ]);
+      setMessages((messages) => {
+        const errorMessages = [
+          ...messages,
+          { role: 'assistant', content: "I'm sorry, but I encountered an error. Please try again later." },
+        ]
+        // Save error message to localStorage
+        localStorage.setItem('chatMessages', JSON.stringify(errorMessages))
+        return errorMessages
+      });
     } finally {
       setIsLoading(false);
     }
@@ -159,6 +209,17 @@ export default function Home() {
         alignItems="center"
       >
         <Stack spacing={2} width="300px">
+          <Typography variant="h5" align="center">
+            {isSignUp ? 'Create Account' : 'Sign In'}
+          </Typography>
+          {isSignUp && (
+            <TextField
+              label="Username"
+              fullWidth
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+            />
+          )}
           <TextField
             label="Email"
             type="email"
@@ -175,9 +236,15 @@ export default function Home() {
           />
           <Button 
             variant="contained" 
-            onClick={signIn} 
+            onClick={isSignUp ? signUp : signIn} 
           >
-            Sign In
+            {isSignUp ? 'Create Account' : 'Sign In'}
+          </Button>
+          <Button 
+            variant="text"
+            onClick={() => setIsSignUp(!isSignUp)}
+          >
+            {isSignUp ? 'Already have an account? Sign In' : 'Don\'t have an account? Create one'}
           </Button>
         </Stack>
       </Box>
